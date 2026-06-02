@@ -141,13 +141,87 @@ The webhook reads the **raw** request body for signature verification, so
 Vercel's automatic body parsing is disabled for that route via the exported
 `config = { api: { bodyParser: false } }`.
 
+### Testing the webhook
+
+Use the [Stripe CLI](https://stripe.com/docs/stripe-cli) to exercise the
+endpoint without making a real payment:
+
+```bash
+# 1. Forward live events to your deployed (or local) endpoint and print the
+#    signing secret to use as STRIPE_WEBHOOK_SECRET while testing.
+stripe listen --forward-to https://YOUR_DOMAIN/api/stripe-webhook
+
+# 2. In another terminal, trigger a completed checkout with subscriber metadata.
+stripe trigger checkout.session.completed \
+  --add checkout_session:metadata.name="Test Reader" \
+  --add checkout_session:metadata.email="you@example.com" \
+  --add checkout_session:metadata.age="34" \
+  --add checkout_session:metadata.education="Bachelor's" \
+  --add checkout_session:metadata.plan="monthly"
+```
+
+The handler logs each step to the Vercel function logs
+(**Vercel → Project → Logs**, filter by `/api/stripe-webhook`). Emails are
+**masked** in logs (`t***@example.com`) and the JSON response reports what ran:
+
+```json
+{ "received": true, "contactSynced": true, "emailSent": true }
+```
+
+If `contactSynced` or `emailSent` is `false`, the cause is logged on the same
+invocation. A real end-to-end test (open the site → submit the form → complete a
+test-mode card `4242 4242 4242 4242`) is the most faithful check.
+
+### Why Brevo did not update — troubleshooting checklist
+
+If a new subscriber never appears in the Brevo list or no confirmation email
+arrives, work down this list (most common first):
+
+1. **Webhook not wired up.** Confirm the endpoint exists in Stripe →
+   Developers → Webhooks, points at `/api/stripe-webhook`, and is subscribed to
+   **`checkout.session.completed`**. Check the endpoint's recent deliveries for
+   non-2xx responses.
+2. **Wrong / missing `STRIPE_WEBHOOK_SECRET`.** A mismatched signing secret
+   makes the handler return **400 Invalid signature** before Brevo is ever
+   called. Each endpoint (and the Stripe CLI) has its **own** secret — copy the
+   right one into the matching environment.
+3. **Brevo env vars not set in Production.** `BREVO_API_KEY`, `BREVO_LIST_ID`
+   and `BREVO_SENDER_EMAIL` must be set for the **Production** environment in
+   Vercel, then **redeploy** (env changes don't apply to existing deploys). If
+   `BREVO_API_KEY` is missing the handler logs `brevo not configured`.
+4. **Custom attribute rejected (historical cause).** Brevo returns **400** for
+   the whole contact upsert if it references an attribute (`AGE`, `EDUCATION`,
+   `PLAN`) that isn't defined on the account. The webhook now **creates these
+   attributes idempotently** on each run and, if it still gets a 400, **retries
+   without the optional attributes** so the contact is added to the list
+   regardless. To store the structured fields, make sure the attributes exist:
+   Brevo → Contacts → Settings → Contact attributes (`AGE` = Number,
+   `EDUCATION` = Text, `PLAN` = Text).
+5. **Sender not verified.** The confirmation email send returns **400** if
+   `BREVO_SENDER_EMAIL` is not a verified sender/domain in Brevo. The contact
+   can still sync even when the email fails — they're independent steps.
+6. **`BREVO_LIST_ID` not numeric or wrong list.** It must be the numeric list
+   ID (e.g. `2`), not the list name. A missing list ID still creates the
+   contact but adds it to no list (logged as a warning).
+7. **Confirmation email in spam.** Check the recipient's spam folder and
+   Brevo → Transactional → Logs/Statistics to confirm the send and delivery.
+
+The webhook always returns **HTTP 200** once the Stripe signature is valid (so
+Stripe won't retry forever for downstream Brevo hiccups). This means a Brevo
+failure does **not** surface as a failed webhook delivery in Stripe — check the
+**Vercel function logs** and the JSON response (`contactSynced` / `emailSent`)
+to see what actually happened.
+
 ### Brevo setup
 
 1. Create (or pick) a **contact list** and note its numeric ID → `BREVO_LIST_ID`.
 2. Verify a **sender** address in Brevo → `BREVO_SENDER_EMAIL` / `BREVO_SENDER_NAME`.
 3. Generate an **API v3 key** → `BREVO_API_KEY`.
-4. Optionally add contact attributes `AGE`, `EDUCATION`, `PLAN` to your list so
-   the synced fields are stored as structured data.
+4. Contact attributes `AGE` (Number), `EDUCATION` (Text) and `PLAN` (Text) are
+   **created automatically** by the webhook the first time it runs. You can also
+   pre-create them in Brevo → Contacts → Settings → Contact attributes. If they
+   can't be created, the webhook still adds the contact to the list without
+   those optional fields.
 
 ## Deploying to Vercel
 
