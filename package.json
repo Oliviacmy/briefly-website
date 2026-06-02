@@ -1,0 +1,13 @@
+{
+  "name": "briefly-website",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Briefly — daily Hong Kong and global news briefing landing site with Stripe Checkout + Brevo subscriber sync.",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "raw-body": "^2.5.2",
+    "stripe": "^16.12.0"
+  }
+}

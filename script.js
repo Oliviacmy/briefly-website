@@ -3,32 +3,142 @@
 (function () {
   "use strict";
 
-  /* ----------- Stripe checkout -----------
-     Routes each pricing button to its live Stripe payment link.
-  ---------------------------------------- */
-  const STRIPE_CHECKOUT_URLS = {
-    monthly: "https://buy.stripe.com/dRmaEWbtlgyv9wY7QV2Fa02",
-    yearly: "https://buy.stripe.com/00w5kC2WP6XV8sUc7b2Fa03"
+  /* ----------- Checkout form + Stripe Checkout -----------
+     Pricing buttons open a form that collects subscriber details,
+     then POSTs to a serverless endpoint that creates a Stripe
+     Checkout subscription session and returns its URL.
+  -------------------------------------------------------- */
+  const CHECKOUT_API = "/api/create-checkout-session";
+
+  const PLAN_LABELS = {
+    monthly: "Monthly plan · HKD 29/month",
+    yearly: "Yearly plan · HKD 252/year"
   };
+  const EDUCATION_OPTIONS = [
+    "Primary School",
+    "Secondary School",
+    "Bachelor's",
+    "Postgraduate or above"
+  ];
+
+  const modal = document.getElementById("checkout-modal");
+  const form = document.getElementById("checkout-form");
+  const planLabel = document.getElementById("checkout-modal-plan");
+  const planInput = document.getElementById("checkout-plan");
+  const submitBtn = document.getElementById("checkout-submit");
+  const formError = document.getElementById("checkout-form-error");
+
+  let lastFocused = null;
+
+  function showFieldError(name, message) {
+    const span = form.querySelector('[data-error-for="' + name + '"]');
+    const field = form.elements[name];
+    if (span) span.textContent = message || "";
+    if (field) {
+      if (message) field.setAttribute("aria-invalid", "true");
+      else field.removeAttribute("aria-invalid");
+    }
+  }
+
+  function clearErrors() {
+    ["name", "email", "age", "education"].forEach(function (n) {
+      showFieldError(n, "");
+    });
+    formError.hidden = true;
+    formError.textContent = "";
+  }
+
+  function validate(data) {
+    let ok = true;
+    if (!data.name || data.name.trim().length < 1) {
+      showFieldError("name", "Please enter your name."); ok = false;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email || "")) {
+      showFieldError("email", "Please enter a valid email address."); ok = false;
+    }
+    const age = Number(data.age);
+    if (!Number.isFinite(age) || age < 13 || age > 120) {
+      showFieldError("age", "Please enter an age between 13 and 120."); ok = false;
+    }
+    if (EDUCATION_OPTIONS.indexOf(data.education) === -1) {
+      showFieldError("education", "Please select your education level."); ok = false;
+    }
+    return ok;
+  }
+
+  function openModal(plan) {
+    if (!modal) return;
+    const safePlan = PLAN_LABELS[plan] ? plan : "monthly";
+    planInput.value = safePlan;
+    planLabel.textContent = "You’re subscribing to the " + PLAN_LABELS[safePlan] + ".";
+    clearErrors();
+    lastFocused = document.activeElement;
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+    const firstField = document.getElementById("cf-name");
+    if (firstField) firstField.focus();
+    document.addEventListener("keydown", onKeydown);
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+    document.removeEventListener("keydown", onKeydown);
+    if (lastFocused && typeof lastFocused.focus === "function") lastFocused.focus();
+  }
+
+  function onKeydown(e) {
+    if (e.key === "Escape") closeModal();
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    clearErrors();
+
+    const data = {
+      plan: planInput.value,
+      name: form.elements.name.value.trim(),
+      email: form.elements.email.value.trim(),
+      age: form.elements.age.value.trim(),
+      education: form.elements.education.value
+    };
+
+    if (!validate(data)) return;
+
+    const originalText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Redirecting to secure checkout…";
+
+    try {
+      const res = await fetch(CHECKOUT_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+
+      let payload = {};
+      try { payload = await res.json(); } catch (err) { /* ignore */ }
+
+      if (!res.ok || !payload.url) {
+        throw new Error(payload.error || "We couldn’t start checkout. Please try again.");
+      }
+
+      window.location.href = payload.url;
+    } catch (err) {
+      formError.textContent = err.message || "Something went wrong. Please try again.";
+      formError.hidden = false;
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
+  }
 
   function handleCheckout(e) {
     e.preventDefault();
-    const button = e.currentTarget;
-    const plan = button.dataset.plan || "monthly";
-    const checkoutUrl = STRIPE_CHECKOUT_URLS[plan];
-
-    if (!checkoutUrl || checkoutUrl.includes("STRIPE_")) {
-      const originalText = button.textContent;
-      button.textContent = "Stripe checkout is being connected";
-      button.disabled = true;
-      setTimeout(function () {
-        button.textContent = originalText;
-        button.disabled = false;
-      }, 1800);
-      return;
-    }
-
-    window.location.href = checkoutUrl;
+    const plan = e.currentTarget.dataset.plan || "monthly";
+    openModal(plan);
   }
 
   document
@@ -36,6 +146,13 @@
     .forEach(function (button) {
       button.addEventListener("click", handleCheckout);
     });
+
+  if (modal) {
+    modal.querySelectorAll("[data-close-modal]").forEach(function (el) {
+      el.addEventListener("click", closeModal);
+    });
+    if (form) form.addEventListener("submit", handleSubmit);
+  }
 
   /* ----------- Reveal on scroll -----------
      Respects prefers-reduced-motion. If reduced motion or no

@@ -394,6 +394,56 @@
     </section>
   </main>
 
+  <!-- CHECKOUT FORM MODAL -->
+  <div class="checkout-modal" id="checkout-modal" hidden aria-hidden="true">
+    <div class="checkout-modal-backdrop" data-close-modal></div>
+    <div class="checkout-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="checkout-modal-title">
+      <button type="button" class="checkout-modal-close" aria-label="Close" data-close-modal>&times;</button>
+      <span class="section-eyebrow">Subscribe to Briefly</span>
+      <h2 class="checkout-modal-title" id="checkout-modal-title">Almost there</h2>
+      <p class="checkout-modal-lede" id="checkout-modal-plan">You’re subscribing to the Monthly plan · HKD 29/month.</p>
+
+      <form class="checkout-form" id="checkout-form" novalidate>
+        <input type="hidden" name="plan" id="checkout-plan" value="monthly" />
+
+        <div class="checkout-field">
+          <label for="cf-name">Name</label>
+          <input type="text" id="cf-name" name="name" autocomplete="name" required />
+          <span class="checkout-error" data-error-for="name"></span>
+        </div>
+
+        <div class="checkout-field">
+          <label for="cf-email">Email</label>
+          <input type="email" id="cf-email" name="email" autocomplete="email" required />
+          <span class="checkout-error" data-error-for="email"></span>
+        </div>
+
+        <div class="checkout-field">
+          <label for="cf-age">Age</label>
+          <input type="number" id="cf-age" name="age" min="13" max="120" inputmode="numeric" required />
+          <span class="checkout-error" data-error-for="age"></span>
+        </div>
+
+        <div class="checkout-field">
+          <label for="cf-education">Education</label>
+          <select id="cf-education" name="education" required>
+            <option value="" disabled selected>Select your education level</option>
+            <option value="Primary School">Primary School</option>
+            <option value="Secondary School">Secondary School</option>
+            <option value="Bachelor's">Bachelor's</option>
+            <option value="Postgraduate or above">Postgraduate or above</option>
+          </select>
+          <span class="checkout-error" data-error-for="education"></span>
+        </div>
+
+        <p class="checkout-form-error" id="checkout-form-error" hidden></p>
+
+        <button type="submit" class="btn btn-primary checkout-submit" id="checkout-submit">Continue to secure checkout</button>
+        <p class="signup-meta">Payment is handled securely by Stripe. Cancel anytime.</p>
+      </form>
+    </div>
+  </div>
+
   <!-- FOOTER -->
   <footer class="site-footer">
     <div class="container footer-grid">
